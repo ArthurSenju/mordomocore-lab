@@ -26,22 +26,39 @@ jobs:
       - run: dotnet build -c Release --no-restore
       - run: dotnet test -c Release --no-build
 
-  deploy_fake:   # por enquanto, só demonstração
+  build_image:
     needs: build_test
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - name: Descobrir ambiente alvo
-        id: envpick
+      - uses: actions/checkout@v4
+    
+      - name: Definir tag por branch
+        id: v
         run: |
           ref="${GITHUB_REF_NAME}"
-          env=""
-          if [[ "$ref" == "develop" ]]; then env="Dev"; fi
-          if [[ "$ref" == "staging" || "$ref" == release/* ]]; then env="Homologacao"; fi
-          if [[ "$ref" == "main" || "${GITHUB_REF_TYPE}" == "tag" ]]; then env="Producao"; fi
-          if [[ -z "$env" ]]; then echo "Branch não mapeada"; exit 1; fi
-          echo "ENV_LABEL=$env" >> $GITHUB_OUTPUT
-
-      - name: (Simulação) Deploy
-        run: |
-          echo "Faria deploy no ambiente: ${{ steps.envpick.outputs.ENV_LABEL }}"
-          echo "Quando o EKS existir, aqui entra helm upgrade --install ..."
+          channel=""
+          if [[ "$ref" == "develop" ]]; then channel="dev"; fi
+          if [[ "$ref" == "staging" || "$ref" == release/* ]]; then channel="hml"; fi
+          if [[ "$ref" == "main" || "${GITHUB_REF_TYPE}" == "tag" ]]; then channel="prd"; fi
+          if [[ -z "$channel" ]]; then echo "branch não mapeada"; exit 1; fi
+          echo "TAG=${channel}-${ref//\//-}-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+    
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+    
+      - name: Build & Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ steps.v.outputs.TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
