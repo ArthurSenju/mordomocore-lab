@@ -1,2 +1,2 @@
 # mordomocore-lab
-teste CI/CD
+teste CI/CD.
