@@ -1,0 +1,47 @@
+name: CI/CD - Lab (branches → ambientes)
+
+on:
+  push:
+    branches:
+      - develop          # Dev
+      - staging          # Homologação
+      - 'release/**'     # Homologação
+      - main             # Produção
+    tags:
+      - 'v*'             # Produção por tag v1.2.3
+
+env:
+  DOTNET_VERSION: 9.0.x
+
+jobs:
+  build_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          cache: true
+      - run: dotnet restore
+      - run: dotnet build -c Release --no-restore
+      - run: dotnet test -c Release --no-build
+
+  deploy_fake:   # por enquanto, só demonstração
+    needs: build_test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descobrir ambiente alvo
+        id: envpick
+        run: |
+          ref="${GITHUB_REF_NAME}"
+          env=""
+          if [[ "$ref" == "develop" ]]; then env="Dev"; fi
+          if [[ "$ref" == "staging" || "$ref" == release/* ]]; then env="Homologacao"; fi
+          if [[ "$ref" == "main" || "${GITHUB_REF_TYPE}" == "tag" ]]; then env="Producao"; fi
+          if [[ -z "$env" ]]; then echo "Branch não mapeada"; exit 1; fi
+          echo "ENV_LABEL=$env" >> $GITHUB_OUTPUT
+
+      - name: (Simulação) Deploy
+        run: |
+          echo "Faria deploy no ambiente: ${{ steps.envpick.outputs.ENV_LABEL }}"
+          echo "Quando o EKS existir, aqui entra helm upgrade --install ..."
