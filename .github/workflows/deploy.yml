@@ -1,0 +1,64 @@
+name: CI/CD - Lab (branches → ambientes)
+
+on:
+  push:
+    branches:
+      - develop          # Dev
+      - staging          # Homologação
+      - 'release/**'     # Homologação
+      - main             # Produção
+    tags:
+      - 'v*'             # Produção por tag v1.2.3
+
+env:
+  DOTNET_VERSION: 9.0.x
+
+jobs:
+  build_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          cache: true
+      - run: dotnet restore
+      - run: dotnet build -c Release --no-restore
+      - run: dotnet test -c Release --no-build
+
+  build_image:
+    needs: build_test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+    
+      - name: Definir tag por branch
+        id: v
+        run: |
+          ref="${GITHUB_REF_NAME}"
+          channel=""
+          if [[ "$ref" == "develop" ]]; then channel="dev"; fi
+          if [[ "$ref" == "staging" || "$ref" == release/* ]]; then channel="hml"; fi
+          if [[ "$ref" == "main" || "${GITHUB_REF_TYPE}" == "tag" ]]; then channel="prd"; fi
+          if [[ -z "$channel" ]]; then echo "branch não mapeada"; exit 1; fi
+          echo "TAG=${channel}-${ref//\//-}-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+    
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+    
+      - name: Build & Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ steps.v.outputs.TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
