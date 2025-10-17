@@ -22,10 +22,10 @@ jobs:
           cache: true
 
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore MordomoLab.sln
 
       - name: Build
-        run: dotnet build --no-restore -c Release
+        run: dotnet build MordomoLab.sln --no-restore -c Release
 
       - name: Test
-        run: dotnet test --no-build -c Release --logger trx
+        run: dotnet test MordomoLab.sln --no-build -c Release --logger trx
