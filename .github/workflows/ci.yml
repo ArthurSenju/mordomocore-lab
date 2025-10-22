@@ -46,7 +46,8 @@ jobs:
             /d:sonar.cs.opencover.reportsPaths="${GITHUB_WORKSPACE}/TestResults/coverage.opencover.xml" \
             /d:sonar.pullrequest.key="${{ github.event.pull_request.number }}" \
             /d:sonar.pullrequest.branch="${{ github.head_ref }}" \
-            /d:sonar.pullrequest.base="${{ github.base_ref }}"
+            /d:sonar.pullrequest.base="${{ github.base_ref }}" \
+            /d:sonar.scanner.skipJreProvisioning=true
 
       - name: Restore
         run: dotnet restore MordomoLab.sln
