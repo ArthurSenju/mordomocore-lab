@@ -58,23 +58,34 @@ jobs:
       - name: Ensure TestResults folder
         run: mkdir -p TestResults
 
-      - name: Run Unit tests and collect coverage (OpenCover)
-        run: |
-            mkdir -p TestResults 
-            dotnet test MordomoLab.Tests/MordomoLab.Tests.csproj --no-build -c Release \
-                /p:CollectCoverage=true \
-                /p:CoverletOutputFormat=opencover \
-                /p:CoverletOutput=TestResults/coverage.opencover.xml \
-                --logger "trx;LogFileName=TestResults/unit-results.trx" || true
+      - name: Ensure TestResults folder
+        run: mkdir -p TestResults
 
-      - name: List TestResults (debug)
+      - name: Run Unit tests and collect coverage (OpenCover) - verbose
+        run: |
+            set -eux
+            echo "PWD: $(pwd)"
+            echo "Listing repo root:"
+            ls -la
+            echo "Listing test project folder:"
+            ls -la MordomoLab.Tests || true
+            
+            dotnet test MordomoLab.Tests/MordomoLab.Tests.csproj -c Release \
+              --logger "trx;LogFileName=TestResults/unit-results.trx" \
+              /p:CollectCoverage=true \
+              /p:CoverletOutputFormat=opencover \
+              /p:CoverletOutput=TestResults/coverage.opencover.xml
+
+      - name: Show TestResults folder after tests (debug)
         if: always()
         run: |
             echo "==== Files in TestResults ===="
             ls -la TestResults || true
             echo
-            echo "==== Find *.trx in workspace (debug) ===="
+            echo "==== Find *.trx in workspace ===="
             find . -type f -name "*.trx" -print || true
+            echo "==== Find coverage files ===="
+            find . -type f -name "coverage*.xml" -print || true
 
       - name: Upload trx artifact (unit)
         if: always()
@@ -83,7 +94,6 @@ jobs:
             name: unit-test-trx
             path: TestResults/*.trx
             if-no-files-found: warn
-
 
       - name: Run Integration tests
         id: run-integration-tests
