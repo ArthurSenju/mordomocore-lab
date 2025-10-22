@@ -68,10 +68,10 @@ jobs:
             ls -la MordomoLab.Tests || true
             
             dotnet test MordomoLab.Tests/MordomoLab.Tests.csproj -c Release \
-              --logger "trx;LogFileName=TestResults/unit-results.trx" \
+              --logger "trx;LogFileName=${GITHUB_WORKSPACE}/TestResults/unit-results.trx" \
               /p:CollectCoverage=true \
               /p:CoverletOutputFormat=opencover \
-              /p:CoverletOutput=TestResults/coverage.opencover.xml
+              /p:CoverletOutput=${GITHUB_WORKSPACE}/TestResults/coverage.opencover.xml
 
       - name: Show TestResults folder after tests (debug)
         if: always()
