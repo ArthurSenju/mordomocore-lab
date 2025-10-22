@@ -54,10 +54,7 @@ jobs:
 
       - name: Build
         run: dotnet build MordomoLab.sln --no-restore -c Release
-
-      - name: Ensure TestResults folder
-        run: mkdir -p TestResults
-
+        
       - name: Ensure TestResults folder
         run: mkdir -p TestResults
 
