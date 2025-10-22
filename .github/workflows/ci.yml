@@ -1,22 +1,30 @@
-name: CI - Build, Tests & SonarCloud
+name: CI - Build & Tests 
 
 on:
   push:
     branches: [ main, develop, staging ]
   pull_request:
     branches: [ main, develop, staging ]
-
+    
 permissions:
   contents: read
   checks: write
+  pull-requests: write
 
 jobs:
   build_and_analyze:
     name: Build, Tests and SonarCloud Analysis
     runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
+      SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -28,26 +36,36 @@ jobs:
           dotnet tool install --global dotnet-sonarscanner --version 11.0.0 || true
           echo "${HOME}/.dotnet/tools" >> $GITHUB_PATH
 
-      - name: Ensure Java
+      - name: Ensure Java (install if missing)
         run: |
-          java -version || sudo apt-get update && sudo apt-get install -y openjdk-11-jre-headless
+          if ! java -version 2>/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y openjdk-11-jre-headless
+          else
+            java -version
+          fi
 
+      # ==== Sonar begin ====
       - name: SonarScanner Begin
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
-          SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
         run: |
-          dotnet sonarscanner begin \
-            /k:"${SONAR_PROJECT_KEY}" \
-            /o:"${SONAR_ORGANIZATION}" \
-            /d:sonar.host.url="https://sonarcloud.io" \
-            /d:sonar.login="${SONAR_TOKEN}" \
-            /d:sonar.cs.opencover.reportsPaths="${GITHUB_WORKSPACE}/TestResults/coverage.opencover.xml" \
-            /d:sonar.pullrequest.key="${{ github.event.pull_request.number }}" \
-            /d:sonar.pullrequest.branch="${{ github.head_ref }}" \
-            /d:sonar.pullrequest.base="${{ github.base_ref }}" \
-            /d:sonar.scanner.skipJreProvisioning=true
+          set -eu
+          
+          SONAR_ARGS="/k:\"${SONAR_PROJECT_KEY}\" /o:\"${SONAR_ORGANIZATION}\" /d:sonar.host.url=\"https://sonarcloud.io\" /d:sonar.login=\"${SONAR_TOKEN}\" /d:sonar.cs.opencover.reportsPaths=\"${GITHUB_WORKSPACE}/TestResults/coverage.opencover.xml\" /d:sonar.scanner.skipJreProvisioning=true"
+          
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Detected pull_request event — adding PR parameters for SonarCloud Decoration"
+            PR_KEY="${{ github.event.pull_request.number }}"
+            PR_BRANCH="${{ github.head_ref }}"
+            PR_BASE="${{ github.event.pull_request.base.ref }}"
+
+            SONAR_ARGS="$SONAR_ARGS /d:sonar.pullrequest.key=\"$PR_KEY\" /d:sonar.pullrequest.branch=\"$PR_BRANCH\" /d:sonar.pullrequest.base=\"$PR_BASE\""
+          else
+            echo "Not a pull_request event — running normal analysis (no PR decoration params)"
+          fi
+
+          echo "Running dotnet sonarscanner begin with args:"
+          echo "$SONAR_ARGS"
+          dotnet sonarscanner begin $SONAR_ARGS
 
       - name: Restore
         run: dotnet restore MordomoLab.sln
@@ -93,4 +111,5 @@ jobs:
       - name: SonarScanner End
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: dotnet sonarscanner end /d:sonar.login="${SONAR_TOKEN}" || true
+        run: |
+          dotnet sonarscanner end /d:sonar.login="${SONAR_TOKEN}" || true
