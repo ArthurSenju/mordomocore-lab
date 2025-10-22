@@ -55,22 +55,35 @@ jobs:
       - name: Build
         run: dotnet build MordomoLab.sln --no-restore -c Release
 
+      - name: Ensure TestResults folder
+        run: mkdir -p TestResults
+
       - name: Run Unit tests and collect coverage (OpenCover)
         run: |
-          mkdir -p TestResults
-          dotnet test MordomoLab.Tests/MordomoLab.Tests.csproj --no-build -c Release \
-            /p:CollectCoverage=true \
-            /p:CoverletOutputFormat=opencover \
-            /p:CoverletOutput=TestResults/coverage.opencover.xml \
-            --logger "trx;LogFileName=$GITHUB_WORKSPACE/TestResults/unit-results.trx" || true
+            mkdir -p TestResults 
+            dotnet test MordomoLab.Tests/MordomoLab.Tests.csproj --no-build -c Release \
+                /p:CollectCoverage=true \
+                /p:CoverletOutputFormat=opencover \
+                /p:CoverletOutput=TestResults/coverage.opencover.xml \
+                --logger "trx;LogFileName=TestResults/unit-results.trx" || true
+
+      - name: List TestResults (debug)
+        if: always()
+        run: |
+            echo "==== Files in TestResults ===="
+            ls -la TestResults || true
+            echo
+            echo "==== Find *.trx in workspace (debug) ===="
+            find . -type f -name "*.trx" -print || true
 
       - name: Upload trx artifact (unit)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: unit-test-trx
-          path: TestResults/unit-results.trx
-          if-no-files-found: warn
+            name: unit-test-trx
+            path: TestResults/*.trx
+            if-no-files-found: warn
+
 
       - name: Run Integration tests
         id: run-integration-tests
