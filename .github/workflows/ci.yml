@@ -14,83 +14,57 @@ jobs:
   build_and_analyze:
     name: Build, Tests and SonarCloud Analysis
     runs-on: ubuntu-latest
+    env:
+      SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
+      SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_BRANCH: ${{ github.head_ref }}
+      PR_BASE: ${{ github.base_ref }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup .NET 10
-        uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
-      - name: Install dotnet-sonarscanner
-        run: |
+      - run: |
           dotnet tool install --global dotnet-sonarscanner --version 11.0.0 || true
           echo "${HOME}/.dotnet/tools" >> $GITHUB_PATH
 
-      - name: Ensure Java
-        run: |
-          java -version || sudo apt-get update && sudo apt-get install -y openjdk-11-jre-headless
+      - run: |
+          if ! command -v java >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y openjdk-11-jre-headless
+          fi
 
-      - name: SonarScanner Begin
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
-          SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
-        run: |
-          dotnet sonarscanner begin \
-            /k:"${SONAR_PROJECT_KEY}" \
-            /o:"${SONAR_ORGANIZATION}" \
-            /d:sonar.host.url="https://sonarcloud.io" \
-            /d:sonar.login="${SONAR_TOKEN}" \
-            /d:sonar.cs.opencover.reportsPaths="${GITHUB_WORKSPACE}/TestResults/coverage.opencover.xml" \
-            /d:sonar.pullrequest.key="${{ github.event.pull_request.number }}" \
-            /d:sonar.pullrequest.branch="${{ github.head_ref }}" \
-            /d:sonar.pullrequest.base="${{ github.base_ref }}" \
-            /d:sonar.scanner.skipJreProvisioning=true
+      - run: |
+          set -eux
+          ARGS="/k:${SONAR_PROJECT_KEY} /o:${SONAR_ORGANIZATION} /d:sonar.host.url=https://sonarcloud.io /d:sonar.login=${SONAR_TOKEN} /d:sonar.cs.opencover.reportsPaths=${GITHUB_WORKSPACE}/TestResults/coverage.opencover.xml /d:sonar.scanner.skipJreProvisioning=true"
+          if [ -n "${PR_NUMBER}" ]; then
+            ARGS="${ARGS} /d:sonar.pullrequest.key=${PR_NUMBER} /d:sonar.pullrequest.branch=${PR_BRANCH} /d:sonar.pullrequest.base=${PR_BASE}"
+          fi
+          dotnet sonarscanner begin $ARGS
 
-      - name: Restore
-        run: dotnet restore MordomoLab.sln
+      - run: dotnet restore MordomoLab.sln
 
-      - name: Build
-        run: dotnet build MordomoLab.sln --no-restore -c Release
+      - run: dotnet build MordomoLab.sln --no-restore -c Release
 
-      - name: Ensure TestResults folder
-        run: mkdir -p TestResults
+      - run: mkdir -p TestResults
 
-      - name: Run Unit Tests and Collect Coverage
-        run: |
+      - run: |
           dotnet test MordomoLab.Tests/MordomoLab.Tests.csproj -c Release \
             --logger "trx;LogFileName=${GITHUB_WORKSPACE}/TestResults/unit-results.trx" \
             /p:CollectCoverage=true \
             /p:CoverletOutputFormat=opencover \
             /p:CoverletOutput=${GITHUB_WORKSPACE}/TestResults/coverage.opencover.xml
 
-      - name: Upload Unit Test TRX
-        if: always()
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: unit-test-trx
           path: TestResults/unit-results.trx
           if-no-files-found: warn
 
-      - name: Run Integration Tests
-        id: run-integration-tests
-        continue-on-error: true
-        run: |
-          dotnet test MordomoLab.Tests/MordomoLab.Tests.csproj --no-build -c Release \
-            --logger "trx;LogFileName=${GITHUB_WORKSPACE}/TestResults/integration-results.trx"
-          echo "dotnet_test_exit_code=$?" >> $GITHUB_OUTPUT
-
-      - name: Upload Integration Test TRX
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: integration-test-trx
-          path: TestResults/integration-results.trx
-          if-no-files-found: warn
-
-      - name: SonarScanner End
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: dotnet sonarscanner end /d:sonar.login="${SONAR_TOKEN}" || true
+      - run: |
+          set -eux
+          dotnet sonarscanner end /d:sonar.login="${SONAR_TOKEN}"
