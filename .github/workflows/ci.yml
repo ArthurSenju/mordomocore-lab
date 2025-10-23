@@ -5,7 +5,7 @@ on:
     branches: [ main, develop, staging ]
   pull_request:
     branches: [ main, develop, staging ]
-    
+
 permissions:
   contents: read
   checks: write
@@ -36,7 +36,7 @@ jobs:
           dotnet tool install --global dotnet-sonarscanner --version 11.0.0 || true
           echo "${HOME}/.dotnet/tools" >> $GITHUB_PATH
 
-      - name: Ensure Java (install if missing)
+      - name: Ensure Java
         run: |
           if ! java -version 2>/dev/null; then
             sudo apt-get update
@@ -45,26 +45,27 @@ jobs:
             java -version
           fi
 
-      # ==== Sonar begin ====
       - name: SonarScanner Begin
         run: |
           set -eu
-          
+          SONAR_PROJECT_KEY="${{ secrets.SONAR_PROJECT_KEY }}"
+          SONAR_ORGANIZATION="${{ secrets.SONAR_ORGANIZATION }}"
+          SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}"
+          if ! echo "$SONAR_PROJECT_KEY" | grep -Eq '^[A-Za-z0-9._:-]+$'; then
+            echo "ERROR: SONAR_PROJECT_KEY contains invalid characters. Allowed: letters, digits, '.', '_', '-', ':'"
+            exit 1
+          fi
+          if echo "$SONAR_PROJECT_KEY" | grep -Eq '^[0-9]+$'; then
+            echo "ERROR: SONAR_PROJECT_KEY must contain at least one non-digit character."
+            exit 1
+          fi
           SONAR_ARGS="/k:\"${SONAR_PROJECT_KEY}\" /o:\"${SONAR_ORGANIZATION}\" /d:sonar.host.url=\"https://sonarcloud.io\" /d:sonar.login=\"${SONAR_TOKEN}\" /d:sonar.cs.opencover.reportsPaths=\"${GITHUB_WORKSPACE}/TestResults/coverage.opencover.xml\" /d:sonar.scanner.skipJreProvisioning=true"
-          
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "Detected pull_request event — adding PR parameters for SonarCloud Decoration"
             PR_KEY="${{ github.event.pull_request.number }}"
             PR_BRANCH="${{ github.head_ref }}"
             PR_BASE="${{ github.event.pull_request.base.ref }}"
-
             SONAR_ARGS="$SONAR_ARGS /d:sonar.pullrequest.key=\"$PR_KEY\" /d:sonar.pullrequest.branch=\"$PR_BRANCH\" /d:sonar.pullrequest.base=\"$PR_BASE\""
-          else
-            echo "Not a pull_request event — running normal analysis (no PR decoration params)"
           fi
-
-          echo "Running dotnet sonarscanner begin with args:"
-          echo "$SONAR_ARGS"
           dotnet sonarscanner begin $SONAR_ARGS
 
       - name: Restore
