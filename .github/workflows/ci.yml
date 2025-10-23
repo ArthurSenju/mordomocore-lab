@@ -9,24 +9,23 @@ on:
 permissions:
   contents: read
   checks: write
-  pull-requests: write
 
 jobs:
   build_and_analyze:
     name: Build, Tests and SonarCloud Analysis
     runs-on: ubuntu-latest
     env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
       SONAR_PROJECT_KEY: ${{ secrets.SONAR_PROJECT_KEY }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_BRANCH: ${{ github.head_ref }}
+      PR_BASE: ${{ github.base_ref }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: true
 
-      - name: Setup .NET 10
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -36,37 +35,21 @@ jobs:
           dotnet tool install --global dotnet-sonarscanner --version 11.0.0 || true
           echo "${HOME}/.dotnet/tools" >> $GITHUB_PATH
 
-      - name: Ensure Java
+      - name: Ensure Java available
         run: |
-          if ! java -version 2>/dev/null; then
+          if ! command -v java >/dev/null 2>&1; then
             sudo apt-get update
             sudo apt-get install -y openjdk-11-jre-headless
-          else
-            java -version
           fi
 
       - name: SonarScanner Begin
         run: |
-          set -eu
-          SONAR_PROJECT_KEY="${{ secrets.SONAR_PROJECT_KEY }}"
-          SONAR_ORGANIZATION="${{ secrets.SONAR_ORGANIZATION }}"
-          SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}"
-          if ! echo "$SONAR_PROJECT_KEY" | grep -Eq '^[A-Za-z0-9._:-]+$'; then
-            echo "ERROR: SONAR_PROJECT_KEY contains invalid characters. Allowed: letters, digits, '.', '_', '-', ':'"
-            exit 1
+          set -eux
+          ARGS="/k:${SONAR_PROJECT_KEY} /o:${SONAR_ORGANIZATION} /d:sonar.host.url=https://sonarcloud.io /d:sonar.login=${SONAR_TOKEN} /d:sonar.cs.opencover.reportsPaths=${GITHUB_WORKSPACE}/TestResults/coverage.opencover.xml /d:sonar.scanner.skipJreProvisioning=true"
+          if [ -n "${PR_NUMBER}" ]; then
+            ARGS="${ARGS} /d:sonar.pullrequest.key=${PR_NUMBER} /d:sonar.pullrequest.branch=${PR_BRANCH} /d:sonar.pullrequest.base=${PR_BASE}"
           fi
-          if echo "$SONAR_PROJECT_KEY" | grep -Eq '^[0-9]+$'; then
-            echo "ERROR: SONAR_PROJECT_KEY must contain at least one non-digit character."
-            exit 1
-          fi
-          SONAR_ARGS="/k:\"${SONAR_PROJECT_KEY}\" /o:\"${SONAR_ORGANIZATION}\" /d:sonar.host.url=\"https://sonarcloud.io\" /d:sonar.login=\"${SONAR_TOKEN}\" /d:sonar.cs.opencover.reportsPaths=\"${GITHUB_WORKSPACE}/TestResults/coverage.opencover.xml\" /d:sonar.scanner.skipJreProvisioning=true"
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            PR_KEY="${{ github.event.pull_request.number }}"
-            PR_BRANCH="${{ github.head_ref }}"
-            PR_BASE="${{ github.event.pull_request.base.ref }}"
-            SONAR_ARGS="$SONAR_ARGS /d:sonar.pullrequest.key=\"$PR_KEY\" /d:sonar.pullrequest.branch=\"$PR_BRANCH\" /d:sonar.pullrequest.base=\"$PR_BASE\""
-          fi
-          dotnet sonarscanner begin $SONAR_ARGS
+          dotnet sonarscanner begin $ARGS
 
       - name: Restore
         run: dotnet restore MordomoLab.sln
@@ -110,7 +93,6 @@ jobs:
           if-no-files-found: warn
 
       - name: SonarScanner End
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
+          set -eux
           dotnet sonarscanner end /d:sonar.login="${SONAR_TOKEN}" || true
